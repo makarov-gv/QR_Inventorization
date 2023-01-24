@@ -1,4 +1,4 @@
-Before working make sure to install all the modules listed in **requirements.txt**. If an error occures during the automatic IDE configuration, it would make sense to install latest versions of modules aviable on your Python interpretator (3.9 was used in that project).
+Before working make sure to install all the modules listed in **requirements.txt**. If an error occures during the automatic IDE configuration, it may make sense to install latest versions of modules aviable on your Python interpretator (3.9 was used in that project).
 
 * **inventorization.py** - main script to be ran on the connected Pioneer Mini. It includes inventorization of customizable storage rack and user's request to find an item processing.
 
