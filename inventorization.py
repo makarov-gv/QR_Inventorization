@@ -50,21 +50,21 @@ def inventorize(drone, camera_ip):
                     try:
                         gray = cv2.cvtColor(camera_ip.get_cv_frame(), cv2.COLOR_BGR2GRAY)  # обесцвечивание кадра
                         string, _, _ = detector.detectAndDecode(gray)  # попытка извлечь строку из QR-кода
-                        if string is not None or (time.time() - timer > float(2.5)):
+                        if ((string is not None) and (string != '')) or (time.time() - timer > float(2.5)):
                             break
                     except:
                         continue
 
-                if string is not None:  # если QR-код найден
-                    text = string.split()  # разбиение строки на массив из отдельных элементов, разделённых пробелом
-                    print("[INFO] Найден предмет", text[0], "в количестве", text[1])
-                    storage_name.append(text[0])  # записываем имя в массив имён
-                    storage_quantity.append(int(text[1]))  # записываем кол-во в численном формате в массив кол-в
-                else:
-                    print("[INFO] На данной полке предмет отсутствует")
+                if (string is None) or (string == '') or (len(string.split()) != 2):
+                    print("[INFO] На данной полке предмет не найден")
                     # в случае отсутствия предмета на полке, запишем в массивы следующие значения:
                     storage_name.append("None")
                     storage_quantity.append(int(0))
+                else:  # если QR-код найден
+                    text = string.split(' ')  # разбиение строки на массив из отдельных элементов, разделённых пробелом
+                    print("[INFO] Найден предмет", text[0], "в количестве", text[1])
+                    storage_name.append(text[0])  # записываем имя в массив имён
+                    storage_quantity.append(int(text[1]))  # записываем кол-во в численном формате в массив кол-в
 
                 if counter == STORAGE_HEIGHT * STORAGE_WIDTH:  # если ячейка последняя
                     print("[INFO] Инвентаризация завершена:")
