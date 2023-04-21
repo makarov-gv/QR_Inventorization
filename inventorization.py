@@ -1,31 +1,32 @@
 from pioneer_sdk import Pioneer, Camera
-from more_itertools import locate
 import cv2
 import numpy as np
 import time
 
-"""Предполагается, что склад в рамках кейса состоит из одной площадки в которой находится 2 ряда полок по 3 предмета
-в каждой (подробнее в инструкции). Некоторые предметы могут отсутствовать, но дрон всё равно попытается их найти.
-Площадка определяется следующими параметрами:"""
+
+"""Предполагается, что склад в рамках кейса состоит из одной площадки в которой находится 2 ряда с QR-кодами по 3 
+предмета в каждой (подробнее в инструкции). Некоторые предметы могут отсутствовать, но дрон всё равно попытается их 
+найти. Площадка определяется следующими параметрами:"""
 STORAGE_HEIGHT = 2
 STORAGE_WIDTH = 3
-X_INC = float(0.5)  # расстояние между соседними предметами в одном ряду
-Z_INC = float(0.5)  # расстояние между рядами
-START_HEIGHT = float(1.5)  # высота верхней полки
+X_INC = float(0.5)  # расстояние между предметами в одном ряду
+Z_INC = float(0.5)  # расстояние между предметами в одном столбце
+START_HEIGHT = float(1.5)  # высота верхнего ряда
+
+names = []  # массив для сохранения имён хранящихся предметов, e.g. "Controller"
+quantities = []  # массив для сохранения кол-ва хранящихся предметов, e.g. 16
+coords = []  # массив для сохранения координат хранящихся предметов, e.g. (2, 1.5)
 
 
-def inventorize(drone, camera_ip):
+def inventorize(drone, cam):
     """
     Функция инвентаризации. Дрон пролетает ряд за рядом, начиная с крайней верхней левой точки складского стеллажа и
     пытается отсканировать QR-код в каждой ячейке в течении 2.5 секунд, занося её содержимое в два массива:
     массив имён и массив количеств содержащихся предметов. После инвентаризации возвращается на изначальную позицию и
     садится.
     :param drone: экземпляр класса Pioneer
-    :param camera_ip: экземпляр класса Camera
-    :return storage_name, storage_quantity: массив имён и массив количеств содержащихся на стеллаже предметов
+    :param cam: экземпляр класса Camera
     """
-    storage_name = []  # массив для сохранения имён хранящихся предметов
-    storage_quantity = []  # массив для сохранения кол-ва хранящихся предметов
     counter = 1
     command_x = float(0)
     command_z = float(START_HEIGHT)
@@ -33,7 +34,7 @@ def inventorize(drone, camera_ip):
     new_point = True
     while True:
         try:
-            camera_frame = camera_ip.get_cv_frame()  # получение кадра с камеры
+            camera_frame = cam.get_cv_frame()  # получение кадра с камеры
             if np.sum(camera_frame) == 0:  # если кадр не получен, начинает новую итерацию
                 continue
             cv2.imshow('QR Reading', camera_frame)  # вывод изображения на экран
@@ -48,34 +49,36 @@ def inventorize(drone, camera_ip):
                 # предполагается, что предмета нет. Во время цикла дрон игнорирует нажатие esc и не выводит картинку.
                 while True:
                     try:
-                        gray = cv2.cvtColor(camera_ip.get_cv_frame(), cv2.COLOR_BGR2GRAY)  # обесцвечивание кадра
+                        gray = cv2.cvtColor(cam.get_cv_frame(), cv2.COLOR_BGR2GRAY)  # обесцвечивание кадра
                         string, _, _ = detector.detectAndDecode(gray)  # попытка извлечь строку из QR-кода
                         if ((string is not None) and (string != '')) or (time.time() - timer > float(2.5)):
                             break
                     except:
                         continue
-
                 if (string is None) or (string == '') or (len(string.split()) != 2):
                     print("[INFO] На данной полке предмет не найден")
-                    # в случае отсутствия предмета на полке, запишем в массивы следующие значения:
-                    storage_name.append("None")
-                    storage_quantity.append(int(0))
-                else:  # если QR-код найден
+                    # В случае отсутствия предмета на полке, запишем в массивы следующие значения:
+                    names.append("None")
+                    quantities.append(int(0))
+                    coords.append((0, 0))
+                else:  # если QR-код найден и он в нужном формате (два слова)
                     text = string.split(' ')  # разбиение строки на массив из отдельных элементов, разделённых пробелом
                     print("[INFO] Найден предмет", text[0], "в количестве", text[1])
-                    storage_name.append(text[0])  # записываем имя в массив имён
-                    storage_quantity.append(int(text[1]))  # записываем кол-во в численном формате в массив кол-в
+                    names.append(text[0])  # записываем имя в массив имён
+                    quantities.append(int(text[1]))  # записываем кол-во в численном формате в массив кол-в
+                    coords.append((command_x, command_z))  # записываем текущие координаты в массив координат
 
                 if counter == STORAGE_HEIGHT * STORAGE_WIDTH:  # если ячейка последняя
                     print("[INFO] Инвентаризация завершена:")
-                    print(storage_name)
-                    print(storage_quantity)
-                    # возвращаемся на начальную точку и садимся, перед тем как опрашивать пользователя
+                    print(names)
+                    print(quantities)
+                    print(coords)
+                    # Возвращаемся на начальную точку и садимся, перед тем как опрашивать пользователя
                     drone.go_to_local_point(x=0, y=0, z=command_z, yaw=0)
                     while True:
                         if drone.point_reached():
                             drone.land()
-                            return storage_name, storage_quantity
+                            return None
                 elif counter == STORAGE_WIDTH:  # если ячейка последняя в ряду - переход на новый ряд
                     command_x = float(0)
                     command_z -= Z_INC
@@ -86,55 +89,23 @@ def inventorize(drone, camera_ip):
         except cv2.error:
             continue
 
-        key_ip = cv2.waitKey(1)  # проверяем нажатие клавиши esc для предварительного завершения программы
+        key_ip = cv2.waitKey(1)  # проверяем нажатие клавиши ESC для предварительного завершения программы
         if key_ip == 27:
             print('[INFO] ESC нажат, программа завершается')
             drone.land()
             time.sleep(5)
             cv2.destroyAllWindows()
-            exit()
+            exit(0)
 
 
-def find_item(result, drone):
+def find_item(drone):
     """
     Функция нахождения и подсвечивания предмета. Рассчитывает, на какое расстояние дрону нужно переместиться, чтобы
     достигнуть нужной ячейки.
-    :param result: индекс ячейки с необходимым предметом
     :param drone: экземпляр класса Pioneer
     """
-    drone.arm()
-    drone.takeoff()
-    col = result
-    row = 0
-    # т.к. номера ячеек проставляются друг за другом, с помощью цикла нужно определить конкретный ряд, где находится
-    # данная ячейка, а так же её *столбец*
-    for j in range(STORAGE_HEIGHT-1):
-        if col < STORAGE_WIDTH:
-            row = j
-            break
-        else:
-            col -= STORAGE_WIDTH
-    cmd_x = float(X_INC*col)  # определяем расстояние до столбца с предметом
-    cmd_z = START_HEIGHT-float(Z_INC*row)  # определяем высоту нужного ряда
-    drone.go_to_local_point(x=cmd_x, y=0, z=cmd_z, yaw=0)
-    while True:
-        if drone.point_reached():
-            break
-    print("Дрон подсвечивает ячейку")
-    drone.led_control(r=0, g=255, b=0)
-    time.sleep(3)
-    drone.led_control(r=0, g=0, b=0)
-
-
-if __name__ == '__main__':
-    pioneer_mini = Pioneer()  # pioneer_mini как экземпляр класса Pioneer
-    pioneer_mini.arm()
-    pioneer_mini.takeoff()
-    camera = Camera()  # camera как экземпляр класса Camera
-
-    names, quantities = inventorize(pioneer_mini, camera)
-
     item_found = False
+    from more_itertools import locate
     while True:
         item = input("Какой предмет нужно найти? ")
         if item == "exit":  # команда exit позволит закрыть запрос и завершить программу предварительно
@@ -147,9 +118,9 @@ if __name__ == '__main__':
             # проверяем, соответствует ли запрошенное кол-во числу предметов в каждой отдельной ячейке
             for i in range(len(indexes)):
                 if quantity <= quantities[indexes[i]]:
-                    result_index = indexes[i]  # номер ячейки
+                    index = indexes[i]  # индекс нужного предмета (его номер в характерных массивах)
                     item_found = True  # флаг, чтобы выйти из внешнего цикла
-                    print("Ячейка", result_index + 1, "содержит", item, "в нужном количестве")
+                    print("Ячейка", index+1, "содержит", item, "в нужном количестве")
                     break
             if item_found:
                 break
@@ -157,7 +128,29 @@ if __name__ == '__main__':
         else:
             print("Такого предмета нет на складе, повторите попытку")
 
-    find_item(result_index, pioneer_mini)
+    drone.arm()
+    drone.takeoff()
+    (command_x, command_z) = coords[index]  # получаем координаты данного предмета из массива координат по индексу
+    drone.go_to_local_point(x=command_x, y=0, z=command_z, yaw=0)
+    while True:
+        if drone.point_reached():
+            break
+
+    print("Дрон подсвечивает ячейку")
+    drone.led_control(r=0, g=255, b=0)
+    time.sleep(3)
+    drone.led_control(r=0, g=0, b=0)
+
+
+if __name__ == '__main__':
+    pioneer_mini = Pioneer(logger=False)  # pioneer_mini как экземпляр класса Pioneer
+    pioneer_mini.arm()
+    pioneer_mini.takeoff()
+    camera = Camera()  # camera как экземпляр класса Camera
+
+    inventorize(pioneer_mini, camera)
+
+    find_item(pioneer_mini)
 
     pioneer_mini.land()
     time.sleep(5)
